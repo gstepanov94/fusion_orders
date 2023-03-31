@@ -2,6 +2,7 @@ from general_helper import *
 from api_helper import OneInchApi, OpenOceanApi
 from db_helper import DBHelper
 
+
 if __name__=='__main__':
     orders = Orders()
     profitable_deals = ProfitableDeals()
@@ -20,9 +21,13 @@ if __name__=='__main__':
             for item in items:
                 order = Order().read_order_from_json(item)
                 if orders.get_order(item["orderHash"]):
-                    orders.orders[item["orderHash"]].update(order)
+                    if order.makerAsset =='0x412a68a1de737da33e0a326c023c345b343e8092':
+                        continue
+                    orders.orders[item["orderHash"]].update(order, tokens)
+                    
+
                 order.config_order(tokens)
-                orders.add_order(order)
+                orders.add_order(order, tokens)
 
             for orderHash in old_active_orders:
                 if orderHash not in [item["orderHash"] for item in items]:

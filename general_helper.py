@@ -4,6 +4,7 @@ from web3 import Web3
 import requests
 import json
 import time
+from sdk_py.auction_calculator.auction_calculator import AuctionCalculator
 import os
 
 def contert_str_datetime_to_timestamp(str_datetime):
@@ -27,9 +28,12 @@ class Order:
     makingAmount: int = 0
     amount: int = 0
     takerAsset: str = ""
-    takingAmount: int = ""
+    takingAmount: int = 0
     amountOut: int = 0
     deadline: int = ""
+    salt: str = ""
+    interactions: str = ""
+    curr_takingAmount: int = 0
     updated: int = int(time.time()*1000)
     
     def read_order_from_json(self, json):
@@ -40,15 +44,37 @@ class Order:
             takerAsset=json['order']['takerAsset'],
             takingAmount=int(json['order']['takingAmount']),
             deadline=contert_str_datetime_to_timestamp(json['deadline']),
+            salt = json['order']['salt'],
+            interactions = json['order']['interactions']
         )
     def config_order(self, tokens):
-        self.amount = self.makingAmount/10**tokens.get_token(self.makerAsset).decimals
-        self.amountOut = self.takingAmount/10**tokens.get_token(self.takerAsset).decimals
-
-    def update(self, order):
+        if not self.amount:
+            self.amount = self.makingAmount/10**tokens.get_token(self.makerAsset).decimals
+        if not self.curr_takingAmount:
+            self.curr_takingAmount = self.takingAmount
+        self.amountOut = self.curr_takingAmount/10**tokens.get_token(self.takerAsset).decimals
+        
+    
+    def to_v3_format(self):
+        return {
+                "interactions": self.interactions,
+                "salt": self.salt,
+        }
+    def update(self, order, tokens):
         self.makingAmount = order.makingAmount
-        self.takingAmount = order.takingAmount
         self.deadline = order.deadline
+        self.interactions = order.interactions
+        self.salt = order.salt
+        #order=order.config_order(tokens)
+        
+        if order:
+            auction_calculator = AuctionCalculator.fromLimitOrderV3Struct(order.to_v3_format())
+            rate = auction_calculator.calcRateBump(int(time.time()))
+            self.curr_takingAmount = auction_calculator.calcAuctionTakingAmount(self.takingAmount, rate)
+            self.config_order(tokens)
+            #print ('OrderHash:',self.orderHash[-10:], curr_takingAmount, 'updated', rate)
+            #print('OrderHash:',self.orderHash[-10:], self.curr_takingAmount, 'updated')
+            
         self.updated = int(time.time()*1000)
 
     def check_order_profit(self, tokens, openocean_api):
@@ -61,6 +87,18 @@ class Order:
                 return prof_deal
             else:
                 return None
+    def to_calc(self, tokens):
+        return {
+            "makerAsset": self.makerAsset,
+            "makingAmount": self.makingAmount,
+            "takerAsset": self.takerAsset,
+            "takingAmount": self.takingAmount,
+            "amount": self.amount,
+            "amountOut": self.amountOut,
+            "makerSymbol": tokens.get_token(self.makerAsset).symbol,
+            "takerSymbol": tokens.get_token(self.takerAsset).symbol,
+        }
+
     
 @dataclass
 class Orders:
@@ -69,9 +107,9 @@ class Orders:
     def get_order(self, order_hash):
         return self.orders.get(order_hash, None)
     
-    def add_order(self, order):
+    def add_order(self, order, tokens):
         if order.orderHash in self.orders:
-            self.orders[order.orderHash].update(order)
+            self.orders[order.orderHash].update(order, tokens)
         else:
             self.orders[order.orderHash] = order
         
@@ -93,8 +131,9 @@ class Orders:
     def get_orders_list(self):
         return list(self.orders.keys())
     
-    def update_order(self, order):
-        self.orders[order.orderHash].update(order)
+    def update_order(self, order, tokens):
+        self.orders[order.orderHash].update(order, tokens)
+
 
 @dataclass
 class ProfitableDeal:
@@ -135,7 +174,10 @@ class ProfitableDeals:
         dbh.delete_deal(order_hash)
         if order_hash in self.deals:
             del self.deals[order_hash]
-        
+    
+    def get_deal(self, order_hash):
+        return self.deals.get(order_hash, None)
+    
     def get_deals(self):
         return self.deals.values()
                 
