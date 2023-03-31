@@ -1,0 +1,2 @@
+class BadOrderSuffixError(Exception):
+    pass
