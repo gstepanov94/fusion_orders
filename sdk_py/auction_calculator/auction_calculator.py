@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import List
 from sdk_py.auction_calculator.constants import RATE_BUMP_DENOMINATOR, CONTRACT_TAKER_FEE_PRECISION
 from sdk_py.auction_calculator.calc import linearInterpolation
-
 from sdk_py.auction_suffix.auction_suffix import AuctionSuffix
 from sdk_py.auction_salt.auction_salt import AuctionSalt
 
@@ -37,7 +36,6 @@ class AuctionCalculator():
 
     def calcAuctionTakingAmount(self, takingAmount: int, rate: int) -> str:
         auctionTakingAmount = takingAmount * (rate+RATE_BUMP_DENOMINATOR) / RATE_BUMP_DENOMINATOR
-        #print(rate, takingAmount, auctionTakingAmount )
         if int(self.takerFeeRatio) == 0:
             return auctionTakingAmount
         else:
@@ -57,7 +55,6 @@ class AuctionCalculator():
         prevCoefficient = startBump # prevCoefficient is the coefficient of the previous point
         prevCumulativeTime = cumulativeTime  # prevCumulativeTime is the cumulative time of the previous point
         for point in self.points: # for each point in the points list
-            print('point:', point.__dict__)
             cumulativeTime += point.delay # add the delay of the point to the cumulative time
             coefficientBN = point.coefficient # coefficientBN is the coefficient of the point
             if cumulativeTime > currentTime:

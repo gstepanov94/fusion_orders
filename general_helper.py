@@ -37,7 +37,7 @@ class Order:
     updated: int = int(time.time()*1000)
     
     def read_order_from_json(self, json):
-        return Order(
+        order = Order(
             orderHash=json['orderHash'],
             makerAsset=json['order']['makerAsset'],
             makingAmount=int(json['order']['makingAmount']),
@@ -47,34 +47,45 @@ class Order:
             salt = json['order']['salt'],
             interactions = json['order']['interactions']
         )
+        auction_calculator = AuctionCalculator.fromLimitOrderV3Struct(order.to_v3_format())
+        rate = auction_calculator.calcRateBump(int(time.time()))
+        order.curr_takingAmount = auction_calculator.calcAuctionTakingAmount(order.takingAmount, rate)
+        return order
+
     def config_order(self, tokens):
         if not self.amount:
             self.amount = self.makingAmount/10**tokens.get_token(self.makerAsset).decimals
         if not self.curr_takingAmount:
             self.curr_takingAmount = self.takingAmount
         self.amountOut = self.curr_takingAmount/10**tokens.get_token(self.takerAsset).decimals
-        
     
     def to_v3_format(self):
         return {
                 "interactions": self.interactions,
                 "salt": self.salt,
         }
-    def update(self, order, tokens):
-        self.makingAmount = order.makingAmount
-        self.deadline = order.deadline
-        self.interactions = order.interactions
-        self.salt = order.salt
-        #order=order.config_order(tokens)
+    
+    def update(self, tokens):
+        auction_calculator = AuctionCalculator.fromLimitOrderV3Struct(self.to_v3_format())
+        rate = auction_calculator.calcRateBump(int(time.time()))
+        self.curr_takingAmount = auction_calculator.calcAuctionTakingAmount(self.takingAmount, rate)
+        self.config_order(tokens)    
+        self.updated = int(time.time()*1000)
+
+    def update_as_partial_filled(self, json, tokens):
+        self.makingAmount = int(json['order']['makingAmount'])
+        self.takingAmount = int(json['order']['takingAmount'])
+        for fill in json['fills']:
+            self.makingAmount -= int(fill['filledMakerAmount'])
+            self.takingAmount -= int(fill['filledAuctionTakerAmount'])
+        if self.makingAmount < 0 or self.takingAmount < 0:
+            self.makingAmount = 0.1
+            self.takingAmount = 0.1
         
-        if order:
-            auction_calculator = AuctionCalculator.fromLimitOrderV3Struct(order.to_v3_format())
-            rate = auction_calculator.calcRateBump(int(time.time()))
-            self.curr_takingAmount = auction_calculator.calcAuctionTakingAmount(self.takingAmount, rate)
-            self.config_order(tokens)
-            #print ('OrderHash:',self.orderHash[-10:], curr_takingAmount, 'updated', rate)
-            #print('OrderHash:',self.orderHash[-10:], self.curr_takingAmount, 'updated')
-            
+        auction_calculator = AuctionCalculator.fromLimitOrderV3Struct(self.to_v3_format())
+        rate = auction_calculator.calcRateBump(int(time.time()))
+        self.curr_takingAmount = auction_calculator.calcAuctionTakingAmount(self.takingAmount, rate)
+        self.config_order(tokens) 
         self.updated = int(time.time()*1000)
 
     def check_order_profit(self, tokens, openocean_api):
@@ -109,7 +120,7 @@ class Orders:
     
     def add_order(self, order, tokens):
         if order.orderHash in self.orders:
-            self.orders[order.orderHash].update(order, tokens)
+            self.orders[order.orderHash].update(tokens)
         else:
             self.orders[order.orderHash] = order
         
@@ -132,7 +143,7 @@ class Orders:
         return list(self.orders.keys())
     
     def update_order(self, order, tokens):
-        self.orders[order.orderHash].update(order, tokens)
+        self.orders[order.orderHash].update(tokens)
 
 
 @dataclass

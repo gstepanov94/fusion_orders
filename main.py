@@ -21,10 +21,11 @@ if __name__=='__main__':
             for item in items:
                 order = Order().read_order_from_json(item)
                 if orders.get_order(item["orderHash"]):
-                    if order.makerAsset =='0x412a68a1de737da33e0a326c023c345b343e8092':
-                        continue
-                    orders.orders[item["orderHash"]].update(order, tokens)
-                    
+                    status = one_inch_api.get_order_status(item["orderHash"])
+                    if status['fills']:
+                        orders.orders[item["orderHash"]].update_as_partial_filled(status, tokens)
+                    else:
+                        orders.orders[item["orderHash"]].update(tokens)
 
                 order.config_order(tokens)
                 orders.add_order(order, tokens)
@@ -33,7 +34,7 @@ if __name__=='__main__':
                 if orderHash not in [item["orderHash"] for item in items]:
                     order_status = one_inch_api.get_order_status(orderHash)
                     if order_status:
-                        if order_status['status'] in ['expired', 'filled', 'canceled', 'not-enough-balance-or-allowance']:
+                        if order_status['status'] in ['expired', 'filled', 'cancelled', 'not-enough-balance-or-allowance']:
                             print('Order {} is {}'.format(orderHash[-10:], order_status['status']))
                             orders.delete_order(orderHash, profitable_deals, dbh)
                         else:
